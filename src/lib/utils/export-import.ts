@@ -1,7 +1,7 @@
 import { db } from "../db";
 
 interface ExportData {
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   data: {
     inventoryItems: unknown[];
@@ -13,6 +13,7 @@ interface ExportData {
     commodityTrades: unknown[];
     haulingContracts: unknown[];
     cargoCrates: unknown[];
+    flightPlans?: unknown[];
   };
 }
 
@@ -27,6 +28,7 @@ export async function exportAllData(): Promise<void> {
     commodityTrades,
     haulingContracts,
     cargoCrates,
+    flightPlans,
   ] = await Promise.all([
     db.inventoryItems.toArray(),
     db.ships.toArray(),
@@ -37,10 +39,11 @@ export async function exportAllData(): Promise<void> {
     db.commodityTrades.toArray(),
     db.haulingContracts.toArray(),
     db.cargoCrates.toArray(),
+    db.flightPlans.toArray(),
   ]);
 
   const exportData: ExportData = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     data: {
       inventoryItems,
@@ -52,6 +55,7 @@ export async function exportAllData(): Promise<void> {
       commodityTrades,
       haulingContracts,
       cargoCrates,
+      flightPlans,
     },
   };
 
@@ -70,7 +74,7 @@ export async function importAllData(file: File): Promise<void> {
   const text = await file.text();
   const parsed = JSON.parse(text) as ExportData;
 
-  if (parsed.version !== 1) {
+  if (parsed.version !== 1 && parsed.version !== 2) {
     throw new Error("Unsupported backup version");
   }
 
@@ -86,6 +90,7 @@ export async function importAllData(file: File): Promise<void> {
       db.commodityTrades,
       db.haulingContracts,
       db.cargoCrates,
+      db.flightPlans,
     ],
     async () => {
       await Promise.all([
@@ -98,6 +103,7 @@ export async function importAllData(file: File): Promise<void> {
         db.commodityTrades.clear(),
         db.haulingContracts.clear(),
         db.cargoCrates.clear(),
+        db.flightPlans.clear(),
       ]);
 
       const d = parsed.data;
@@ -111,6 +117,7 @@ export async function importAllData(file: File): Promise<void> {
         d.commodityTrades.length > 0 && db.commodityTrades.bulkAdd(d.commodityTrades as never[]),
         d.haulingContracts.length > 0 && db.haulingContracts.bulkAdd(d.haulingContracts as never[]),
         d.cargoCrates.length > 0 && db.cargoCrates.bulkAdd(d.cargoCrates as never[]),
+        d.flightPlans && d.flightPlans.length > 0 && db.flightPlans.bulkAdd(d.flightPlans as never[]),
       ]);
     }
   );

@@ -8,6 +8,7 @@ import type {
   HaulingContract,
   CargoCrate,
 } from "./types/commodity.types";
+import type { FlightPlan } from "./types/flight.types";
 
 const db = new Dexie("sc-journal") as Dexie & {
   inventoryItems: EntityTable<InventoryItem, "id">;
@@ -19,6 +20,7 @@ const db = new Dexie("sc-journal") as Dexie & {
   commodityTrades: EntityTable<CommodityTrade, "id">;
   haulingContracts: EntityTable<HaulingContract, "id">;
   cargoCrates: EntityTable<CargoCrate, "id">;
+  flightPlans: EntityTable<FlightPlan, "id">;
 };
 
 db.version(1).stores({
@@ -31,6 +33,19 @@ db.version(1).stores({
   commodityTrades: "id, commodity, action, crateId, createdAt",
   haulingContracts: "id, status, createdAt",
   cargoCrates: "id, shipId, status",
+});
+
+db.version(2).stores({
+  inventoryItems: "id, category, shipId, createdAt",
+  ships: "id, model, status, createdAt",
+  shipComponents: "id, shipId, type",
+  journalEntries: "id, entryType, createdAt, pinned",
+  contracts: "id, type, status, createdAt",
+  transactions: "id, type, category, createdAt",
+  commodityTrades: "id, commodity, action, crateId, createdAt",
+  haulingContracts: "id, status, createdAt",
+  cargoCrates: "id, shipId, status",
+  flightPlans: "id, shipId, status, createdAt",
 });
 
 export { db };
