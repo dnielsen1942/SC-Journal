@@ -47,6 +47,19 @@ export const useCommodityStore = create<CommodityStore>((set, get) => ({
     const entry: CommodityTrade = { ...data, ...createTimestamps() };
     await db.commodityTrades.add(entry);
     set((s) => ({ trades: [entry, ...s.trades] }));
+
+    // Auto-create/update cargo crate on buy
+    if (data.action === "buy" && data.quantity > 0) {
+      const crate: Omit<CargoCrate, "id" | "createdAt" | "updatedAt"> = {
+        name: `Trade: ${data.commodity}`,
+        contents: [{ commodity: data.commodity, quantity: data.quantity, purchasePrice: data.totalPrice }],
+        location: data.location,
+        status: "Stored",
+      };
+      const crateEntry: CargoCrate = { ...crate, ...createTimestamps() };
+      await db.cargoCrates.add(crateEntry);
+      set((s) => ({ crates: [crateEntry, ...s.crates] }));
+    }
   },
   updateTrade: async (id, data) => {
     const updates = { ...data, ...updateTimestamp() };

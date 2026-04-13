@@ -25,6 +25,8 @@ import {
   Milestone,
   Ship,
   X,
+  ClipboardCheck,
+  ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFlightStore } from "@/lib/stores/flight-store";
@@ -204,12 +206,13 @@ export function FlightPlanner() {
               .map((hid) => commodityStore.hauling.find((h) => h.id === hid))
               .filter(Boolean);
             const isExpanded = expandedFlight === flight.id;
+            const isPlanned = flight.status === "Planned";
+            const isPreFlight = flight.status === "Pre-Flight";
             const isActive = flight.status === "In Progress";
-            const canDepart = flight.status === "Planned" || flight.status === "Pre-Flight";
-            const canComplete = flight.status === "In Progress";
+            const isDiverted = flight.status === "Diverted";
 
             return (
-              <Card key={flight.id} className={`group ${isActive ? "border-amber-800/40" : ""}`}>
+              <Card key={flight.id} className={`group ${isActive ? "border-amber-800/40" : isDiverted ? "border-orange-800/40" : ""}`}>
                 <div className="p-4">
                   <div className="flex items-start gap-3">
                     <Button
@@ -270,8 +273,21 @@ export function FlightPlanner() {
                     </div>
 
                     {/* Action buttons */}
-                    <div className="flex gap-1 shrink-0">
-                      {canDepart && (
+                    <div className="flex gap-1 shrink-0 flex-wrap justify-end">
+                      {isPlanned && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="gap-1"
+                          onClick={async () => {
+                            await flightStore.preflight(flight.id);
+                            toast.success("Pre-flight checks started.");
+                          }}
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5" /> Pre-Flight
+                        </Button>
+                      )}
+                      {isPreFlight && (
                         <Button
                           variant="default"
                           size="sm"
@@ -284,14 +300,14 @@ export function FlightPlanner() {
                           <PlayCircle className="h-3.5 w-3.5" /> Depart
                         </Button>
                       )}
-                      {canComplete && (
+                      {(isActive || isDiverted) && (
                         <Button
                           variant="default"
                           size="sm"
                           className="gap-1 bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
                           onClick={async () => {
                             await flightStore.complete(flight.id);
-                            toast.success("Flight completed! Ship location updated.");
+                            toast.success("Flight completed! Ship location updated. Cargo delivered.");
                           }}
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" /> Complete
@@ -302,23 +318,46 @@ export function FlightPlanner() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            className="gap-1 text-orange-400 hover:text-orange-300"
+                            onClick={async () => {
+                              await flightStore.divert(flight.id);
+                              toast.success("Flight diverted.");
+                            }}
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5" /> Divert
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className="gap-1"
                             onClick={() => { setLogFlightId(flight.id); setLogFormOpen(true); }}
                           >
                             <Send className="h-3.5 w-3.5" /> Log
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1 text-red-400 hover:text-red-300"
-                            onClick={async () => {
-                              await flightStore.abort(flight.id);
-                              toast.success("Flight aborted.");
-                            }}
-                          >
-                            <XCircle className="h-3.5 w-3.5" /> Abort
-                          </Button>
                         </>
+                      )}
+                      {(isActive || isDiverted) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-red-400 hover:text-red-300"
+                          onClick={async () => {
+                            await flightStore.abort(flight.id);
+                            toast.success("Flight aborted.");
+                          }}
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Abort
+                        </Button>
+                      )}
+                      {isDiverted && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => { setLogFlightId(flight.id); setLogFormOpen(true); }}
+                        >
+                          <Send className="h-3.5 w-3.5" /> Log
+                        </Button>
                       )}
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(flight); setFormOpen(true); }}>
@@ -364,6 +403,7 @@ export function FlightPlanner() {
                                 <FileText className="h-3 w-3 text-slate-400" />
                                 <span className="text-slate-300">{c.title}</span>
                                 <Badge variant="secondary" className="text-[10px]">{c.type}</Badge>
+                                <Badge variant={c.status === "Completed" ? "success" : c.status === "Failed" || c.status === "Abandoned" ? "destructive" : "default"} className="text-[10px]">{c.status}</Badge>
                                 <span className="text-slate-500 ml-auto">Pay: <CurrencyDisplay amount={c.pay} /></span>
                               </div>
                             ))}
@@ -380,6 +420,7 @@ export function FlightPlanner() {
                               <div key={h.id} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-slate-800/30">
                                 <Truck className="h-3 w-3 text-slate-400" />
                                 <span className="text-slate-300">{h.title}</span>
+                                <Badge variant={h.status === "Completed" ? "success" : h.status === "Failed" || h.status === "Abandoned" ? "destructive" : h.status === "In Transit" ? "warning" : "default"} className="text-[10px]">{h.status}</Badge>
                                 <span className="text-slate-500">{Array.isArray(h.cargo) ? h.cargo.map(c => c.commodity).join(", ") : String(h.cargo)} - {Array.isArray(h.cargo) ? h.cargo.reduce((sum, c) => sum + c.scu, 0) : 0} SCU</span>
                                 <span className="text-slate-500 ml-auto">Pay: <CurrencyDisplay amount={h.pay} /></span>
                               </div>

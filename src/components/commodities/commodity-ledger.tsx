@@ -15,9 +15,11 @@ import {
   CheckCircle2,
   XCircle,
   X,
+  Ship,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCommodityStore } from "@/lib/stores/commodity-store";
+import { useAssetStore } from "@/lib/stores/asset-store";
 import type {
   CommodityTrade,
   HaulingContract,
@@ -27,6 +29,7 @@ import type {
 import { HAULING_STATUSES, CRATE_STATUSES } from "@/lib/types/commodity.types";
 import { emptyLocation, formatLocation } from "@/lib/types/common.types";
 import type { Location } from "@/lib/types/common.types";
+import type { Ship as ShipType } from "@/lib/types/asset.types";
 import { getCommodityNames } from "@/lib/constants/commodities";
 import { formatDateTime, formatCurrency } from "@/lib/utils/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -478,9 +481,14 @@ function HaulingPanel() {
 
 function CargoPanel() {
   const { crates, addCrate, updateCrate, removeCrate } = useCommodityStore();
+  const assetStore = useAssetStore();
   const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<CargoCrate | null>(null);
+
+  useEffect(() => {
+    assetStore.load();
+  }, [assetStore.load]);
 
   return (
     <div className="space-y-4 mt-4">
@@ -535,9 +543,20 @@ function CargoPanel() {
                       {crate.status}
                     </Badge>
                   </div>
-                  <div className="flex items-center gap-1 text-xs text-slate-400">
-                    <Globe className="h-3 w-3" />
-                    {formatLocation(crate.location)}
+                  <div className="flex items-center gap-3 text-xs text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      {formatLocation(crate.location)}
+                    </span>
+                    {crate.shipId && (() => {
+                      const ship = assetStore.ships.find((s) => s.id === crate.shipId);
+                      return ship ? (
+                        <span className="flex items-center gap-1">
+                          <Ship className="h-3 w-3" />
+                          {ship.name || ship.model}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                   {crate.contents.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
@@ -583,6 +602,7 @@ function CargoPanel() {
         open={formOpen}
         onOpenChange={setFormOpen}
         editing={editing}
+        ships={assetStore.ships}
         onSubmit={async (data) => {
           if (editing) {
             await updateCrate(editing.id, data);
@@ -997,17 +1017,20 @@ function CrateFormDialog({
   open,
   onOpenChange,
   editing,
+  ships,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   editing: CargoCrate | null;
+  ships: ShipType[];
   onSubmit: (
     d: Omit<CargoCrate, "id" | "createdAt" | "updatedAt">
   ) => void;
 }) {
   const [name, setName] = useState("");
   const [location, setLocation] = useState(emptyLocation);
+  const [shipId, setShipId] = useState("");
   const [status, setStatus] = useState("Stored");
   const [contentsStr, setContentsStr] = useState("");
   const [notes, setNotes] = useState("");
@@ -1017,6 +1040,7 @@ function CrateFormDialog({
       if (editing) {
         setName(editing.name);
         setLocation(editing.location);
+        setShipId(editing.shipId || "");
         setStatus(editing.status);
         setContentsStr(
           editing.contents
@@ -1030,6 +1054,7 @@ function CrateFormDialog({
       } else {
         setName("");
         setLocation(emptyLocation);
+        setShipId("");
         setStatus("Stored");
         setContentsStr("");
         setNotes("");
@@ -1066,6 +1091,7 @@ function CrateFormDialog({
               name,
               contents,
               location,
+              shipId: shipId && shipId !== "none" ? shipId : undefined,
               status,
               notes: notes || undefined,
             });
@@ -1081,20 +1107,38 @@ function CrateFormDialog({
               required
             />
           </div>
-          <div>
-            <Label>Status</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CRATE_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CRATE_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Ship (optional)</Label>
+              <Select value={shipId} onValueChange={setShipId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No ship" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No ship</SelectItem>
+                  {ships.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name || s.model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div>
             <Label>Location</Label>
