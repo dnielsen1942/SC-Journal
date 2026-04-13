@@ -16,8 +16,7 @@ export interface HaulingContract extends Timestamped {
   title: string;
   origin: Location;
   destination: Location;
-  cargo: string;
-  scu: number;
+  cargo: HaulingCargo[];
   pay: Currency;
   fee?: Currency;
   status: string;
@@ -25,6 +24,11 @@ export interface HaulingContract extends Timestamped {
   completedAt?: string;
   linkedTransactionId?: UUID;
   notes?: string;
+}
+
+export interface HaulingCargo {
+  commodity: string;
+  scu: number;
 }
 
 export interface CargoCrate extends Timestamped {

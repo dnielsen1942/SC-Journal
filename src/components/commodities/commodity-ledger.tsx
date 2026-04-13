@@ -12,12 +12,16 @@ import {
   PackageOpen,
   Globe,
   ArrowRightLeft,
+  CheckCircle2,
+  XCircle,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCommodityStore } from "@/lib/stores/commodity-store";
 import type {
   CommodityTrade,
   HaulingContract,
+  HaulingCargo,
   CargoCrate,
 } from "@/lib/types/commodity.types";
 import { HAULING_STATUSES, CRATE_STATUSES } from "@/lib/types/commodity.types";
@@ -308,7 +312,7 @@ function TradesPanel() {
 // ===================== HAULING PANEL =====================
 
 function HaulingPanel() {
-  const { hauling, addHauling, updateHauling, removeHauling } =
+  const { hauling, addHauling, updateHauling, removeHauling, completeHauling, abandonHauling } =
     useCommodityStore();
   const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -371,9 +375,9 @@ function HaulingPanel() {
                     <span className="text-slate-600">→</span>
                     <span>{formatLocation(h.destination)}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span>Cargo: {h.cargo}</span>
-                    <span>{h.scu} SCU</span>
+                  <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
+                    <span>Cargo: {Array.isArray(h.cargo) ? h.cargo.map(c => `${c.commodity} (${c.scu} SCU)`).join(", ") : String(h.cargo)}</span>
+                    <span>{Array.isArray(h.cargo) ? h.cargo.reduce((sum, c) => sum + c.scu, 0) : 0} SCU total</span>
                     <span>
                       Pay: <CurrencyDisplay amount={h.pay} />
                     </span>
@@ -384,26 +388,54 @@ function HaulingPanel() {
                     ) : null}
                   </div>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => {
-                      setEditing(h);
-                      setFormOpen(true);
-                    }}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-red-400"
-                    onClick={() => setDeleteId(h.id)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                <div className="flex gap-1 shrink-0">
+                  {(h.status === "Active" || h.status === "In Transit") && (
+                    <>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-1 bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                        onClick={async () => {
+                          await completeHauling(h.id);
+                          toast.success("Hauling completed — pay added to ledger");
+                        }}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-red-400 hover:text-red-300"
+                        onClick={async () => {
+                          await abandonHauling(h.id);
+                          toast.success("Hauling contract abandoned");
+                        }}
+                      >
+                        <XCircle className="h-3.5 w-3.5" /> Abandon
+                      </Button>
+                    </>
+                  )}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => {
+                        setEditing(h);
+                        setFormOpen(true);
+                      }}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-red-400"
+                      onClick={() => setDeleteId(h.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </Card>
@@ -746,11 +778,11 @@ function HaulingFormDialog({
     d: Omit<HaulingContract, "id" | "createdAt" | "updatedAt">
   ) => void;
 }) {
+  const commodityNames = getCommodityNames();
   const [title, setTitle] = useState("");
   const [origin, setOrigin] = useState<Location>(emptyLocation);
   const [destination, setDestination] = useState<Location>(emptyLocation);
-  const [cargo, setCargo] = useState("");
-  const [scu, setScu] = useState("");
+  const [cargoItems, setCargoItems] = useState<HaulingCargo[]>([{ commodity: "", scu: 0 }]);
   const [pay, setPay] = useState("");
   const [fee, setFee] = useState("");
   const [status, setStatus] = useState("Active");
@@ -762,8 +794,11 @@ function HaulingFormDialog({
         setTitle(editing.title);
         setOrigin(editing.origin);
         setDestination(editing.destination);
-        setCargo(editing.cargo);
-        setScu(String(editing.scu));
+        setCargoItems(
+          Array.isArray(editing.cargo) && editing.cargo.length > 0
+            ? editing.cargo
+            : [{ commodity: "", scu: 0 }]
+        );
         setPay(String(editing.pay));
         setFee(editing.fee ? String(editing.fee) : "");
         setStatus(editing.status);
@@ -772,8 +807,7 @@ function HaulingFormDialog({
         setTitle("");
         setOrigin(emptyLocation);
         setDestination(emptyLocation);
-        setCargo("");
-        setScu("");
+        setCargoItems([{ commodity: "", scu: 0 }]);
         setPay("");
         setFee("");
         setStatus("Active");
@@ -781,6 +815,21 @@ function HaulingFormDialog({
       }
     }
   }, [open, editing]);
+
+  const updateCargoItem = (index: number, field: keyof HaulingCargo, value: string | number) => {
+    setCargoItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const addCargoItem = () => {
+    setCargoItems((prev) => [...prev, { commodity: "", scu: 0 }]);
+  };
+
+  const removeCargoItem = (index: number) => {
+    if (cargoItems.length <= 1) return;
+    setCargoItems((prev) => prev.filter((_, i) => i !== index));
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -800,8 +849,7 @@ function HaulingFormDialog({
               title,
               origin,
               destination,
-              cargo,
-              scu: Number(scu) || 0,
+              cargo: cargoItems.filter((c) => c.commodity.trim()),
               pay: Number(pay) || 0,
               fee: fee ? Number(fee) : undefined,
               status,
@@ -810,50 +858,81 @@ function HaulingFormDialog({
           }}
           className="space-y-4"
         >
-          <div>
-            <Label>Title *</Label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Hauling job name"
-              required
-            />
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Cargo *</Label>
+              <Label>Title *</Label>
               <Input
-                value={cargo}
-                onChange={(e) => setCargo(e.target.value)}
-                placeholder="What are you hauling?"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Hauling job name"
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>SCU</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={scu}
-                  onChange={(e) => setScu(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label>Status</Label>
-                <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {HAULING_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HAULING_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {/* Cargo items */}
+          <div>
+            <Label>Cargo *</Label>
+            <div className="space-y-2 mt-1">
+              {cargoItems.map((item, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    list="hauling-commodities"
+                    value={item.commodity}
+                    onChange={(e) => updateCargoItem(i, "commodity", e.target.value)}
+                    placeholder="Commodity..."
+                    className="flex-1"
+                    required={i === 0}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    value={item.scu || ""}
+                    onChange={(e) => updateCargoItem(i, "scu", Number(e.target.value) || 0)}
+                    placeholder="SCU"
+                    className="w-24"
+                  />
+                  {cargoItems.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-red-400 hover:text-red-300"
+                      onClick={() => removeCargoItem(i)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <datalist id="hauling-commodities">
+                {commodityNames.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-xs"
+                onClick={addCargoItem}
+              >
+                <Plus className="h-3 w-3" /> Add Cargo
+              </Button>
             </div>
           </div>
           <div>

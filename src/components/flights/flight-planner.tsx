@@ -24,6 +24,7 @@ import {
   Info,
   Milestone,
   Ship,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFlightStore } from "@/lib/stores/flight-store";
@@ -379,7 +380,7 @@ export function FlightPlanner() {
                               <div key={h.id} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-slate-800/30">
                                 <Truck className="h-3 w-3 text-slate-400" />
                                 <span className="text-slate-300">{h.title}</span>
-                                <span className="text-slate-500">{h.cargo} - {h.scu} SCU</span>
+                                <span className="text-slate-500">{Array.isArray(h.cargo) ? h.cargo.map(c => c.commodity).join(", ") : String(h.cargo)} - {Array.isArray(h.cargo) ? h.cargo.reduce((sum, c) => sum + c.scu, 0) : 0} SCU</span>
                                 <span className="text-slate-500 ml-auto">Pay: <CurrencyDisplay amount={h.pay} /></span>
                               </div>
                             ))}
@@ -538,7 +539,7 @@ function FlightFormDialog({
   const [notes, setNotes] = useState("");
   const [selectedContracts, setSelectedContracts] = useState<string[]>([]);
   const [selectedHauling, setSelectedHauling] = useState<string[]>([]);
-  const [waypointsStr, setWaypointsStr] = useState("");
+  const [waypoints, setWaypoints] = useState<{ location: Location; purpose: string }[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -557,11 +558,10 @@ function FlightFormDialog({
         setNotes(editing.notes || "");
         setSelectedContracts(editing.linkedContractIds || []);
         setSelectedHauling(editing.linkedHaulingIds || []);
-        setWaypointsStr(
+        setWaypoints(
           (editing.waypoints || [])
             .sort((a, b) => a.order - b.order)
-            .map((wp) => `${formatLocation(wp.location)}${wp.purpose ? " | " + wp.purpose : ""}`)
-            .join("\n")
+            .map((wp) => ({ location: wp.location, purpose: wp.purpose || "" }))
         );
       } else {
         setName("");
@@ -578,7 +578,7 @@ function FlightFormDialog({
         setNotes("");
         setSelectedContracts([]);
         setSelectedHauling([]);
-        setWaypointsStr("");
+        setWaypoints([]);
       }
     }
   }, [open, editing]);
@@ -602,7 +602,7 @@ function FlightFormDialog({
         if (h) {
           if (!origin.system) setOrigin(h.origin);
           if (!destination.system) setDestination(h.destination);
-          if (!cargoScu) setCargoScu(String(h.scu));
+          if (!cargoScu) setCargoScu(String(Array.isArray(h.cargo) ? h.cargo.reduce((sum, c) => sum + c.scu, 0) : 0));
           if (purpose === "Other") setPurpose("Hauling");
         }
       }
@@ -630,32 +630,21 @@ function FlightFormDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            // Parse waypoints
-            const waypoints: FlightWaypoint[] = waypointsStr
-              .split("\n")
-              .map((line) => line.trim())
-              .filter(Boolean)
-              .map((line, i) => {
-                const [locStr, purposeStr] = line.split("|").map((s) => s.trim());
-                const parts = locStr.split(">").map((s) => s.trim());
-                return {
-                  location: {
-                    system: parts[0] || "",
-                    body: parts[1] || "",
-                    sublocation: parts[2] || "",
-                    detail: parts[3],
-                  },
-                  purpose: purposeStr || undefined,
-                  order: i + 1,
-                };
-              });
+            // Build waypoints from structured state
+            const builtWaypoints: FlightWaypoint[] = waypoints
+              .filter((wp) => wp.location.system || wp.location.body || wp.location.sublocation)
+              .map((wp, i) => ({
+                location: wp.location,
+                purpose: wp.purpose || undefined,
+                order: i + 1,
+              }));
 
             onSubmit({
               name,
               shipId,
               origin,
               destination,
-              waypoints: waypoints.length > 0 ? waypoints : undefined,
+              waypoints: builtWaypoints.length > 0 ? builtWaypoints : undefined,
               status,
               purpose,
               linkedContractIds: selectedContracts.length > 0 ? selectedContracts : undefined,
@@ -735,16 +724,62 @@ function FlightFormDialog({
 
           {/* Waypoints */}
           <div>
-            <Label>Waypoints (one per line: System &gt; Body &gt; Location | Purpose)</Label>
-            <Textarea
-              value={waypointsStr}
-              onChange={(e) => setWaypointsStr(e.target.value)}
-              placeholder={"Stanton > Crusader > Port Olisar | Refuel\nStanton > Hurston > Everus Harbor | Pickup"}
-              rows={3}
-            />
-            <p className="text-[10px] text-slate-500 mt-1">
-              Purposes: {WAYPOINT_PURPOSES.join(", ")}
-            </p>
+            <Label>Waypoints (intermediate stops)</Label>
+            <div className="space-y-3 mt-1">
+              {waypoints.map((wp, i) => (
+                <div key={i} className="border border-slate-700/30 rounded-md p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-mono">Stop {i + 1}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-red-400 hover:text-red-300"
+                      onClick={() => setWaypoints((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <LocationSelector
+                    value={wp.location}
+                    onChange={(loc) =>
+                      setWaypoints((prev) =>
+                        prev.map((w, idx) => (idx === i ? { ...w, location: loc } : w))
+                      )
+                    }
+                  />
+                  <div>
+                    <Label className="text-xs">Purpose</Label>
+                    <Input
+                      list="wp-purposes"
+                      value={wp.purpose}
+                      onChange={(e) =>
+                        setWaypoints((prev) =>
+                          prev.map((w, idx) => (idx === i ? { ...w, purpose: e.target.value } : w))
+                        )
+                      }
+                      placeholder="Purpose of this stop..."
+                    />
+                  </div>
+                </div>
+              ))}
+              <datalist id="wp-purposes">
+                {WAYPOINT_PURPOSES.map((p) => (
+                  <option key={p} value={p} />
+                ))}
+              </datalist>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-xs"
+                onClick={() =>
+                  setWaypoints((prev) => [...prev, { location: { ...emptyLocation }, purpose: "" }])
+                }
+              >
+                <Plus className="h-3 w-3" /> Add Waypoint
+              </Button>
+            </div>
           </div>
 
           {/* Details */}
@@ -805,7 +840,7 @@ function FlightFormDialog({
                     />
                     <Truck className="h-3 w-3 text-slate-400" />
                     <span className="text-slate-300 flex-1">{h.title}</span>
-                    <span className="text-slate-500">{h.cargo} - {h.scu} SCU</span>
+                    <span className="text-slate-500">{Array.isArray(h.cargo) ? h.cargo.map(c => c.commodity).join(", ") : String(h.cargo)} - {Array.isArray(h.cargo) ? h.cargo.reduce((sum, c) => sum + c.scu, 0) : 0} SCU</span>
                     <span className="text-slate-500">{formatCurrency(h.pay)}</span>
                   </label>
                 ))}
