@@ -32,7 +32,7 @@ db.version(1).stores({
   transactions: "id, type, category, createdAt",
   commodityTrades: "id, commodity, action, crateId, createdAt",
   haulingContracts: "id, status, createdAt",
-  cargoCrates: "id, shipId, status",
+  cargoCrates: "id, shipId, status, createdAt",
 });
 
 db.version(2).stores({
@@ -44,7 +44,7 @@ db.version(2).stores({
   transactions: "id, type, category, createdAt",
   commodityTrades: "id, commodity, action, crateId, createdAt",
   haulingContracts: "id, status, createdAt",
-  cargoCrates: "id, shipId, status",
+  cargoCrates: "id, shipId, status, createdAt",
   flightPlans: "id, shipId, status, createdAt",
 });
 
