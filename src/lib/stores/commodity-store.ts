@@ -6,6 +6,7 @@ import type {
   CargoCrate,
 } from "../types/commodity.types";
 import { createTimestamps, updateTimestamp } from "../types/common.types";
+import { useTransactionStore } from "./transaction-store";
 
 interface CommodityStore {
   trades: CommodityTrade[];
@@ -19,6 +20,8 @@ interface CommodityStore {
   addHauling: (data: Omit<HaulingContract, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   updateHauling: (id: string, data: Partial<Omit<HaulingContract, "id" | "createdAt" | "updatedAt">>) => Promise<void>;
   removeHauling: (id: string) => Promise<void>;
+  completeHauling: (id: string) => Promise<void>;
+  abandonHauling: (id: string) => Promise<void>;
   addCrate: (data: Omit<CargoCrate, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   updateCrate: (id: string, data: Partial<Omit<CargoCrate, "id" | "createdAt" | "updatedAt">>) => Promise<void>;
   removeCrate: (id: string) => Promise<void>;
@@ -72,6 +75,38 @@ export const useCommodityStore = create<CommodityStore>((set, get) => ({
   removeHauling: async (id) => {
     await db.haulingContracts.delete(id);
     set((s) => ({ hauling: s.hauling.filter((h) => h.id !== id) }));
+  },
+
+  completeHauling: async (id) => {
+    const hauling = get().hauling.find((h) => h.id === id);
+    if (!hauling) return;
+
+    const now = new Date().toISOString();
+    const updates = { status: "Completed", completedAt: now, ...updateTimestamp() };
+    await db.haulingContracts.update(id, updates);
+    set((s) => ({
+      hauling: s.hauling.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+    }));
+
+    // Auto-add pay as income to ledger
+    const txStore = useTransactionStore.getState();
+    await txStore.load();
+    await txStore.add({
+      description: `Hauling completed: ${hauling.title}`,
+      amount: hauling.pay,
+      type: "income",
+      category: "Contract Pay",
+      relatedEntityId: id,
+      relatedEntityType: "hauling",
+    });
+  },
+
+  abandonHauling: async (id) => {
+    const updates = { status: "Abandoned", ...updateTimestamp() };
+    await db.haulingContracts.update(id, updates);
+    set((s) => ({
+      hauling: s.hauling.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+    }));
   },
 
   addCrate: async (data) => {

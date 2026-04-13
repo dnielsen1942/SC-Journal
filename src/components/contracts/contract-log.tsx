@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plus, FileText, Trash2, Pencil, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { Plus, FileText, Trash2, Pencil, CheckCircle, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useContractStore } from "@/lib/stores/contract-store";
 import type { Contract } from "@/lib/types/contract.types";
@@ -43,7 +43,7 @@ const statusConfig: Record<string, { icon: React.ElementType; variant: "default"
 };
 
 export function ContractLog() {
-  const { contracts, loaded, load, add, update, remove } = useContractStore();
+  const { contracts, loaded, load, add, update, remove, complete, abandon } = useContractStore();
   const [formOpen, setFormOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Contract | null>(null);
@@ -170,13 +170,41 @@ export function ContractLog() {
                       <span>{formatDateTime(c.createdAt)}</span>
                     </div>
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(c); setFormOpen(true); }}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-300" onClick={() => setDeleteId(c.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                  <div className="flex gap-1 shrink-0">
+                    {(c.status === "Active" || c.status === "Available") && (
+                      <>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="gap-1 bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+                          onClick={async () => {
+                            await complete(c.id);
+                            toast.success("Contract completed — pay added to ledger");
+                          }}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-red-400 hover:text-red-300"
+                          onClick={async () => {
+                            await abandon(c.id);
+                            toast.success("Contract abandoned");
+                          }}
+                        >
+                          <XCircle className="h-3.5 w-3.5" /> Abandon
+                        </Button>
+                      </>
+                    )}
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditing(c); setFormOpen(true); }}>
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-300" onClick={() => setDeleteId(c.id)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </Card>

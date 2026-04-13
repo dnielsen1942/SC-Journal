@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useId } from "react";
 import type { Location } from "@/lib/types/common.types";
 import {
   getSystemNames,
@@ -16,6 +16,7 @@ interface LocationSelectorProps {
 }
 
 export function LocationSelector({ value, onChange }: LocationSelectorProps) {
+  const uid = useId();
   const systems = getSystemNames();
   const bodies = value.system ? getBodyNames(value.system) : [];
   const sublocations =
@@ -26,7 +27,6 @@ export function LocationSelector({ value, onChange }: LocationSelectorProps) {
   const handleChange = useCallback(
     (field: keyof Location, val: string) => {
       const updated = { ...value, [field]: val };
-      // Clear downstream fields when parent changes
       if (field === "system") {
         updated.body = "";
         updated.sublocation = "";
@@ -45,12 +45,12 @@ export function LocationSelector({ value, onChange }: LocationSelectorProps) {
       <div>
         <Label className="text-xs mb-1 block">System</Label>
         <Input
-          list="systems-list"
+          list={`${uid}-systems`}
           value={value.system}
           onChange={(e) => handleChange("system", e.target.value)}
           placeholder="System..."
         />
-        <datalist id="systems-list">
+        <datalist id={`${uid}-systems`}>
           {systems.map((s) => (
             <option key={s} value={s} />
           ))}
@@ -59,26 +59,26 @@ export function LocationSelector({ value, onChange }: LocationSelectorProps) {
       <div>
         <Label className="text-xs mb-1 block">Body</Label>
         <Input
-          list="bodies-list"
+          list={`${uid}-bodies`}
           value={value.body}
           onChange={(e) => handleChange("body", e.target.value)}
           placeholder="Planet/Moon..."
         />
-        <datalist id="bodies-list">
+        <datalist id={`${uid}-bodies`}>
           {bodies.map((b) => (
             <option key={b} value={b} />
           ))}
         </datalist>
       </div>
       <div>
-        <Label className="text-xs mb-1 block">Location</Label>
+        <Label className="text-xs mb-1 block">Station / City</Label>
         <Input
-          list="sublocations-list"
+          list={`${uid}-subs`}
           value={value.sublocation}
           onChange={(e) => handleChange("sublocation", e.target.value)}
           placeholder="Station/City..."
         />
-        <datalist id="sublocations-list">
+        <datalist id={`${uid}-subs`}>
           {sublocations.map((s) => (
             <option key={s} value={s} />
           ))}
