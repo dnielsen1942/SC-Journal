@@ -8,6 +8,7 @@ import {
   Wallet,
   BarChart3,
   Database,
+  Navigation,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ExportImportDialog } from "@/components/shared/export-import-dialog";
@@ -17,11 +18,13 @@ import { Journey } from "@/components/journal/journey";
 import { ContractLog } from "@/components/contracts/contract-log";
 import { TransactionLedger } from "@/components/transactions/transaction-ledger";
 import { CommodityLedger } from "@/components/commodities/commodity-ledger";
+import { FlightPlanner } from "@/components/flights/flight-planner";
 
 const tabs = [
   { id: "assets", label: "Assets", icon: Package },
   { id: "journey", label: "Journey", icon: BookOpen },
   { id: "contracts", label: "Contracts", icon: FileText },
+  { id: "flights", label: "Flights", icon: Navigation },
   { id: "ledger", label: "Ledger", icon: Wallet },
   { id: "commodities", label: "Commodities", icon: BarChart3 },
 ] as const;
@@ -76,6 +79,10 @@ export function TabShell() {
 
           <TabsContent value="contracts">
             <ContractLog />
+          </TabsContent>
+
+          <TabsContent value="flights">
+            <FlightPlanner />
           </TabsContent>
 
           <TabsContent value="ledger">
