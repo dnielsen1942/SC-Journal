@@ -4,6 +4,7 @@ import type { FlightPlan, FlightLogEntry } from "../types/flight.types";
 import type { Location } from "../types/common.types";
 import { createTimestamps, updateTimestamp } from "../types/common.types";
 import { useAssetStore } from "./asset-store";
+import { useCommodityStore } from "./commodity-store";
 
 interface FlightStore {
   flights: FlightPlan[];
@@ -12,9 +13,11 @@ interface FlightStore {
   add: (data: Omit<FlightPlan, "id" | "createdAt" | "updatedAt">) => Promise<void>;
   update: (id: string, data: Partial<Omit<FlightPlan, "id" | "createdAt" | "updatedAt">>) => Promise<void>;
   remove: (id: string) => Promise<void>;
-  // Cross-tab actions
+  // Status progression
+  preflight: (id: string) => Promise<void>;
   depart: (id: string) => Promise<void>;
   complete: (id: string) => Promise<void>;
+  divert: (id: string) => Promise<void>;
   abort: (id: string) => Promise<void>;
   // Flight log
   addLogEntry: (flightId: string, entry: Omit<FlightLogEntry, "timestamp">) => Promise<void>;
@@ -49,6 +52,29 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set((s) => ({ flights: s.flights.filter((f) => f.id !== id) }));
   },
 
+  preflight: async (id) => {
+    const flight = get().flights.find((f) => f.id === id);
+    if (!flight) return;
+
+    const now = new Date().toISOString();
+    const logEntry: FlightLogEntry = {
+      timestamp: now,
+      message: "Pre-flight checks initiated",
+      type: "Milestone",
+    };
+
+    const updates = {
+      status: "Pre-Flight",
+      logEntries: [...(flight.logEntries || []), logEntry],
+      ...updateTimestamp(),
+    };
+
+    await db.flightPlans.update(id, updates);
+    set((s) => ({
+      flights: s.flights.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+    }));
+  },
+
   depart: async (id) => {
     const flight = get().flights.find((f) => f.id === id);
     if (!flight) return;
@@ -76,6 +102,31 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const assetStore = useAssetStore.getState();
     if (flight.shipId) {
       await assetStore.updateShip(flight.shipId, { status: "In Transit" });
+    }
+
+    // Cross-tab: set linked hauling contracts to "In Transit" and create cargo crates
+    const commodityStore = useCommodityStore.getState();
+    await commodityStore.load();
+    const linkedHaulingIds = flight.linkedHaulingIds || [];
+    for (const hid of linkedHaulingIds) {
+      const hauling = commodityStore.hauling.find((h) => h.id === hid);
+      if (hauling && hauling.status !== "Completed" && hauling.status !== "Abandoned") {
+        await commodityStore.updateHauling(hid, { status: "In Transit" });
+
+        // Create a cargo crate for this hauling contract's cargo
+        const cargoContents = Array.isArray(hauling.cargo)
+          ? hauling.cargo.map((c) => ({ commodity: c.commodity, quantity: c.scu }))
+          : [];
+        if (cargoContents.length > 0) {
+          await commodityStore.addCrate({
+            name: `Hauling: ${hauling.title}`,
+            contents: cargoContents,
+            location: hauling.origin,
+            shipId: flight.shipId,
+            status: "In Transit",
+          });
+        }
+      }
     }
   },
 
@@ -110,6 +161,42 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         location: flight.destination,
       });
     }
+
+    // Cross-tab: update cargo crates on this ship to destination and "Delivered"
+    const commodityStore = useCommodityStore.getState();
+    await commodityStore.load();
+    const shipCrates = commodityStore.crates.filter(
+      (c) => c.shipId === flight.shipId && c.status === "In Transit"
+    );
+    for (const crate of shipCrates) {
+      await commodityStore.updateCrate(crate.id, {
+        location: flight.destination,
+        status: "Delivered",
+      });
+    }
+  },
+
+  divert: async (id) => {
+    const flight = get().flights.find((f) => f.id === id);
+    if (!flight) return;
+
+    const now = new Date().toISOString();
+    const logEntry: FlightLogEntry = {
+      timestamp: now,
+      message: "Flight diverted from planned route",
+      type: "Warning",
+    };
+
+    const updates = {
+      status: "Diverted",
+      logEntries: [...(flight.logEntries || []), logEntry],
+      ...updateTimestamp(),
+    };
+
+    await db.flightPlans.update(id, updates);
+    set((s) => ({
+      flights: s.flights.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+    }));
   },
 
   abort: async (id) => {
@@ -134,7 +221,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       flights: s.flights.map((f) => (f.id === id ? { ...f, ...updates } : f)),
     }));
 
-    // Cross-tab: set ship back to Active (location stays as origin since we aborted)
+    // Cross-tab: set ship back to Active
     const assetStore = useAssetStore.getState();
     if (flight.shipId) {
       await assetStore.updateShip(flight.shipId, { status: "Active" });
